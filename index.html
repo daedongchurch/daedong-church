@@ -1101,25 +1101,30 @@ function updateCount(){const n=room?room.peers().filter(p=>p.kind==='viewer').le
   $('#count').textContent=n>1?`지금 ${n}명이 함께 있어요`:'혼자 둘러보는 중';$('#dot').classList.toggle('off',!room||!room.connected());}
 let lastSend=0,lastPayload='';
 function sendPresence(t){
-  if(!room||!entered||t-lastSend<.1)return;
-  const o={n:state.name,g:state.g,c:state.c,h:state.h,x:Math.round(me.x*100)/100,z:Math.round(me.z*100)/100,ry:Math.round(me.ry*100)/100,p:me.pose,s:me.seat,say:me.say,sayT:me.sayT,e:me.eKind,eS:me.eS,tg:me.eTg};
-  const js=JSON.stringify(o);if(js===lastPayload&&t-lastSend<2)return;lastPayload=js;lastSend=t;room.presence(o).catch(()=>{});
+  if(!room||!entered||t-lastSend<.25)return;
+  const o={n:state.name,g:state.g,c:state.c,h:state.h,x:Math.round(me.x*20)/20,z:Math.round(me.z*20)/20,ry:Math.round(me.ry*10)/10,p:me.pose,s:me.seat,say:me.say,sayT:me.sayT,e:me.eKind,eS:me.eS,tg:me.eTg};
+  const js=JSON.stringify(o);if(js===lastPayload&&t-lastSend<15)return;lastPayload=js;lastSend=t;room.presence(o).catch(()=>{});
 }
 function makeFirebaseRoom(rtdb,myUid){
   const myPeer=myUid+'_'+Math.random().toString(36).slice(2,8);
   const ref=rtdb.ref('presence'),meRef=ref.child(myPeer);
   let mine={},list=new Map(),handlers=[],connH=[],isConn=false,snapshot=[];
-  const fresh=v=>v&&Number(v.t)&&Date.now()-v.t<45000;
+  let lastBeat=0,wroteFull=false;
+  const fresh=v=>v&&Number(v.t)&&Date.now()-v.t<60000;
   const toPeer=(k,v)=>({peer:k,by:(v&&v.by)||null,isMe:!!(v&&v.by===myUid),sameTab:k===myPeer,kind:'viewer',guest:false,presence:(v&&v.p)||{},updatedAt:Date.now()});
   const rebuild=()=>{snapshot=[...list.entries()].filter(([k,v])=>k===myPeer||fresh(v)).map(([k,v])=>toPeer(k,v));};
   const emit=(j,u,l)=>{rebuild();handlers.forEach(h=>{try{h({peers:snapshot,joined:j,updated:u,left:l});}catch(e){}});};
-  rtdb.ref('.info/connected').on('value',sn=>{isConn=!!sn.val();if(isConn){meRef.onDisconnect().remove();if(Object.keys(mine).length)meRef.set({by:myUid,p:mine,t:Date.now()}).catch(()=>{});}connH.forEach(h=>h(isConn));});
+  rtdb.ref('.info/connected').on('value',sn=>{isConn=!!sn.val();if(isConn){meRef.onDisconnect().remove();if(Object.keys(mine).length){wroteFull=true;lastBeat=Date.now();meRef.set({by:myUid,p:mine,t:Date.now()}).catch(()=>{});}}connH.forEach(h=>h(isConn));});
   ref.on('child_added',sn=>{const v=sn.val();list.set(sn.key,v);emit(fresh(v)?[toPeer(sn.key,v)]:[],[],[]);});
   ref.on('child_changed',sn=>{const v=sn.val();list.set(sn.key,v);emit([],[toPeer(sn.key,v)],[]);});
   ref.on('child_removed',sn=>{list.delete(sn.key);emit([],[],[toPeer(sn.key,null)]);});
   setInterval(()=>{const left=[];for(const [k,v] of list)if(k!==myPeer&&!fresh(v)){left.push(toPeer(k,v));list.delete(k);}if(left.length)emit([],[],left);},10000);
   return{
-    presence(patch){for(const k in patch){if(patch[k]===null)delete mine[k];else mine[k]=patch[k];}return meRef.set({by:myUid,p:mine,t:Date.now()}).catch(()=>{});},
+    presence(patch){
+      const diff={};for(const k in patch){const v=patch[k];if(v===null||v===undefined){if(k in mine){delete mine[k];diff['p/'+k]=null;}}else if(JSON.stringify(mine[k])!==JSON.stringify(v)){mine[k]=v;diff['p/'+k]=v;}}
+      const now=Date.now();if(!Object.keys(diff).length&&now-lastBeat<14000)return Promise.resolve();lastBeat=now;
+      if(!wroteFull){wroteFull=true;return meRef.set({by:myUid,p:mine,t:now}).catch(()=>{wroteFull=false;});}
+      diff.t=now;return meRef.update(diff).catch(()=>{});},
     peers(){return snapshot;},
     onPeers(h){handlers.push(h);setTimeout(()=>{rebuild();h({peers:snapshot,joined:snapshot,updated:[],left:[]});},0);return()=>{handlers=handlers.filter(x=>x!==h);};},
     connected(){return isConn;},
