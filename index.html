@@ -542,7 +542,7 @@ const isCamp=p=>p==='campsit'||p==='mallow'||p==='potato'||p==='cocoa';
 const poseY=(pose,x,z)=>heightAt(x,z)+((pose==='sit'||pose==='sitpray'||isCamp(pose))?.21:0);
 
 /* ---------- 월드 ---------- */
-let BIBLE_M=null,GOLD_M=null;
+let BIBLE_M=null,GOLD_M=null;const HIT_M=new THREE.MeshBasicMaterial({visible:false});
 let bulbMesh=null,snow=null,boardTex=null,boardMesh=null;
 function buildWorld(){
   TEX=makeTextures();
@@ -716,7 +716,9 @@ function buildWorld(){
     col(x0,x1,rz-.28,rz+.36);
     for(const bx of[cx-w/3,cx,cx+w/3]){const b=new THREE.Mesh(G('bible',()=>new THREE.BoxGeometry(.19,.055,.15)),BIBLE_M);b.position.set(bx+rand(-.15,.15),FLOOR+.668,rz+.46);b.rotation.y=rand(-.15,.15);scene.add(b);
       const cr1=new THREE.Mesh(G('bcr1',()=>new THREE.BoxGeometry(.018,.004,.08)),GOLD_M);cr1.position.y=.03;b.add(cr1);const cr2=new THREE.Mesh(G('bcr2',()=>new THREE.BoxGeometry(.06,.004,.018)),GOLD_M);cr2.position.set(0,.03,-.012);b.add(cr2);
-      b.userData={bible:true};clickables.push(b);}}});
+      b.userData={bible:true};clickables.push(b);
+      const hb=new THREE.Mesh(G('bhit',()=>new THREE.BoxGeometry(.55,.38,.5)),HIT_M);hb.position.copy(b.position);hb.userData={bible:true};scene.add(hb);clickables.push(hb);}}});
+  buildLectern();
   // 기도제목 게시판
   const fr=boxB(-13.3,-8.8,2.5,5.8,-24.99,-24.9,phong(0x6B4A2E));const bl=new THREE.PointLight(0xFFD9A0,.55,7,2);bl.position.set(-11.05,5.2,-22.8);scene.add(bl);
   boardTex=canvasTex(768,544,()=>{});drawBoard([]);
@@ -777,6 +779,19 @@ function animateFire(t,dt){
   fire.glow.material.opacity=.55+.05*Math.sin(t*3);
   const ep=fire.ep;for(let i=0;i<fire.N;i++){ep[i*3+1]+=fire.ev[i]*dt*.45;ep[i*3]+=Math.sin(t*1.2+i)*.004;if(ep[i*3+1]>2.2){ep[i*3]=CX+rand(-.3,.3);ep[i*3+1]=.4;ep[i*3+2]=CZ+rand(-.3,.3);}}
   fire.embers.geometry.attributes.position.needsUpdate=true;
+}
+function buildLectern(){
+  const lx=-12.6,lz=-1.9,wood=phong(0x6B4A2E);
+  boxB(lx-.07,lx+.07,FLOOR,FLOOR+1.0,lz-.07,lz+.07,wood);boxB(lx-.35,lx+.35,FLOOR,FLOOR+.06,lz-.3,lz+.3,wood);
+  const g=new THREE.Group();g.position.set(lx,FLOOR+1.05,lz);g.rotation.x=.38;scene.add(g);
+  box(.82,.05,.62,wood,0,0,0,g);box(.72,.03,.52,phong(0x7A1F26),0,.035,0,g);
+  for(const s of[-1,1]){const pg=box(.34,.03,.48,phong(0xF2E8D0),s*.18,.06,0,g);pg.rotation.z=s*.07;}
+  box(.02,.012,.5,phong(0xC9A35A),0,.08,0,g);
+  const gl=new THREE.Sprite(new THREE.SpriteMaterial({map:TEX.halo,transparent:true,depthWrite:false,opacity:.55}));gl.scale.set(1.4,1.4,1);gl.position.set(lx,FLOOR+1.25,lz);scene.add(gl);
+  const lt=canvasTex(512,112,(c,w,h)=>{c.font='34px "Gowun Dodum", sans-serif';const txt='📖 눌러서 말씀 뽑기';const tw=c.measureText(txt).width+44;c.fillStyle='rgba(251,244,223,.92)';rr(c,(w-tw)/2,22,tw,64,32);c.fill();c.fillStyle='#24382C';c.textAlign='center';c.textBaseline='middle';c.fillText(txt,w/2,55);});
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:lt,transparent:true,depthWrite:false}));sp.scale.set(1.7,.37,1);sp.position.set(lx,FLOOR+1.95,lz);scene.add(sp);
+  const hb=new THREE.Mesh(new THREE.BoxGeometry(1.1,1.6,1),HIT_M);hb.position.set(lx,FLOOR+1.0,lz);hb.userData={bible:true};scene.add(hb);clickables.push(hb);
+  col(lx-.4,lx+.4,lz-.35,lz+.35);
 }
 function resetFlake(i,init){const p=snow.pos;let x,z;do{x=rand(-45,45);z=rand(-30,40);}while(x>-16.5&&x<21.5&&z<1.5&&z>-26.5);p[i*3]=x;p[i*3+1]=init?rand(0,26):26;p[i*3+2]=z;snow.speed[i]=rand(.6,1.4);}
 const PAL=[0xFF5A4E,0xFFC94D,0x5FD37A,0xFFF4D6,0x6FA8FF];const tmpC=new THREE.Color();
@@ -1053,7 +1068,8 @@ function handleClick(cx,cy){
   if(!entered)return;
   ndc.set(cx/innerWidth*2-1,-(cy/innerHeight)*2+1);ray.setFromCamera(ndc,camera);
   const sk=snowAt();if(sk){removeSnowman(sk);return;}
-  const hit=ray.intersectObjects(clickables,false)[0];if(!hit||hit.distance>30)return;
+  const hits=ray.intersectObjects(clickables,false);let hit=hits[0];if(!hit||hit.distance>30)return;
+  const bh=hits.find(h=>h.object.userData.bible&&h.distance-hit.distance<.8);if(bh)hit=bh;
   const u=hit.object.userData;
   if(u.board){openPrayers();return;}
   if(u.bible){openVerse();return;}
