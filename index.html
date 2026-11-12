@@ -295,7 +295,9 @@ function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('show'
 /* ---------- 렌더러 ---------- */
 const canvas=$('#c');
 const renderer=new THREE.WebGLRenderer({canvas,antialias:true,logarithmicDepthBuffer:true});
-renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,1.5));
+const IS_MOBILE=(window.matchMedia&&matchMedia('(pointer:coarse)').matches)||Math.min(screen.width,screen.height)<700;
+const PR_LEVELS=(IS_MOBILE?[2,1.6,1.3,1]:[1.5,1.25,1,.8]).map(v=>Math.min(window.devicePixelRatio||1,v));
+renderer.setPixelRatio(PR_LEVELS[0]);
 renderer.setSize(innerWidth,innerHeight);
 const scene=new THREE.Scene();
 scene.fog=new THREE.Fog(0x3A3352,30,100);
@@ -1326,7 +1328,7 @@ async function enter(){
   state.name=n.slice(0,10);try{localStorage.setItem('daedong-avatar',JSON.stringify(state));}catch(e){}
   me.ch=makeChar(state);setLabel(me.ch,state.name);scene.add(me.ch.root);
   me.x=0;me.z=9;me.ry=PI;me.y=0;yaw=0;
-  $('#entry').hidden=true;$('#hud').hidden=false;entered=true;updateButtons();canvas.focus();
+  $('#entry').hidden=true;$('#hud').hidden=false;entered=true;perf.enterT=performance.now();updateButtons();canvas.focus();
   ensureAudio();unlockAudio();
   if(firePref)startFireSound();
   if(pv.chars){pv.chars.forEach(disposeChar);pv.chars=null;}if(pv.r){pv.r.dispose();pv.r=null;}
@@ -1512,13 +1514,13 @@ $('#musicOff').onclick=()=>{if(music.on){stopMusic();musicPref=false;}else{start
 document.addEventListener('visibilitychange',()=>{if(!music.ctx)return;if(document.hidden)music.ctx.suspend();else if(music.on||fireS.on)music.ctx.resume();});
 
 /* ---------- 루프 ---------- */
-const perf={t0:0,f:0,q:0,told:false};
-function applyQuality(q){
-  const pr=[Math.min(window.devicePixelRatio||1,1.5),1,.8,.65][q];
+const perf={t0:0,f:0,q:0,told:false,low:0,high:0,enterT:0};
+function applyQuality(q,down){
+  const pr=PR_LEVELS[q];
   renderer.setPixelRatio(pr);renderer.setSize(innerWidth,innerHeight);
   if(snow&&snow.points){snow.points.geometry.setDrawRange(0,q>=2?Math.floor(snow.N/3):snow.N);snow.points.visible=q<3;}
   if(fire&&fire.embers)fire.embers.visible=q<2;
-  if(!perf.told){perf.told=true;toast('화면이 버벅여서 그래픽을 조금 가볍게 조정했어요.');}
+  if(down&&!perf.told){perf.told=true;toast('화면이 버벅여서 그래픽을 조금 가볍게 조정했어요.');}
 }
 
 const clock=new THREE.Clock();let tw=0;
@@ -1527,7 +1529,9 @@ function angLerp(a,b,k){let d=((b-a+PI)%(2*PI)+2*PI)%(2*PI)-PI;return a+d*k;}
 function tick(){
   requestAnimationFrame(tick);
   const dt=Math.min(clock.getDelta(),.05),t=clock.elapsedTime;
-  {const now=performance.now();if(!perf.t0)perf.t0=now;perf.f++;if(now-perf.t0>2500){const fps=perf.f*1000/(now-perf.t0);perf.t0=now;perf.f=0;if(entered&&fps<30&&perf.q<3){perf.q++;applyQuality(perf.q);}}}
+  {const now=performance.now();if(!perf.t0)perf.t0=now;perf.f++;if(now-perf.t0>3000){const fps=perf.f*1000/(now-perf.t0);perf.t0=now;perf.f=0;
+    if(entered&&!document.hidden&&now-perf.enterT>8000){if(fps<26){perf.low++;perf.high=0;if(perf.low>=2&&perf.q<3){perf.q++;perf.low=0;applyQuality(perf.q,true);}}
+      else if(fps>50){perf.high++;perf.low=0;if(perf.high>=3&&perf.q>0){perf.q--;perf.high=0;applyQuality(perf.q,false);}}else{perf.low=0;perf.high=0;}}}}
   if(snow){const p=snow.pos;for(let i=0;i<snow.N;i++){p[i*3+1]-=snow.speed[i]*dt;p[i*3]+=Math.sin(t*.7+i)*.004;if(p[i*3+1]<0)resetFlake(i,false);}snow.points.geometry.attributes.position.needsUpdate=true;}
   tw+=dt;if(tw>.08){tw=0;twinkle(t);}
   animateFire(t,dt);
